@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 #define PORT   8080
-#define WIDTH  640
+#define WIDTH  848
 #define HEIGHT 480
 #define FPS    15
 
