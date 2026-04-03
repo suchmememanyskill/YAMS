@@ -21,7 +21,7 @@ jobs:
         run: |
           arm-linux-gnueabihf-gcc \
             -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -O2 \
-            -march=armv7-a -mfpu=vfpv3 -mfloat-abi=hard \
+            -march=armv7-a -mfpu=vfpv3 -mfloat-abi=hard -mthumb \
             -o yams yams.c
 
       - name: Verify target architecture

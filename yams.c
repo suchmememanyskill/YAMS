@@ -19,6 +19,7 @@
 struct buffer {
   void  *start;
   size_t length;
+  size_t bytesused;
 };
 
 static volatile int keep_running = 1;
@@ -82,7 +83,7 @@ int main(int argc, char **argv) {
   // 3. Request buffers for Memory Mapping
   struct v4l2_requestbuffers req;
   memset(&req, 0, sizeof(req));
-  req.count  = 4;
+  req.count  = 3;
   req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   req.memory = V4L2_MEMORY_MMAP;
   if (ioctl(fd, VIDIOC_REQBUFS, &req) < 0)
@@ -97,7 +98,8 @@ int main(int argc, char **argv) {
     buf.index  = i;
     if (ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0)
       error_exit("VIDIOC_QUERYBUF");
-    buffers[i].length = buf.length;
+    buffers[i].length    = buf.length;
+    buffers[i].bytesused = 0;
     buffers[i].start  = mmap(NULL, buf.length, PROT_READ | PROT_WRITE,
                               MAP_SHARED, fd, buf.m.offset);
     if (buffers[i].start == MAP_FAILED)
@@ -157,11 +159,8 @@ int main(int argc, char **argv) {
   int    send_buf_idx  = -1;
   int    send_state    = 0;
   size_t send_offset   = 0;
-  char   boundary_buf[256];
+  char   boundary_buf[128];
   size_t boundary_len  = 0;
-  size_t *bytesused    = calloc(req.count, sizeof(*bytesused)); // Track lengths per buffer
-  if (!bytesused)
-    error_exit("calloc bytesused");
 
   const char *http_header =
       "HTTP/1.0 200 OK\r\n"
@@ -248,8 +247,8 @@ int main(int argc, char **argv) {
           old_buf.index  = fresh_buf_idx;
           ioctl(fd, VIDIOC_QBUF, &old_buf);
         }
-        fresh_buf_idx           = buf.index;
-        bytesused[buf.index]    = buf.bytesused;
+        fresh_buf_idx                = buf.index;
+        buffers[buf.index].bytesused = buf.bytesused;
       } else if (errno != EAGAIN) {
         perror("VIDIOC_DQBUF");
         break;
@@ -258,7 +257,7 @@ int main(int argc, char **argv) {
 
     // 3. Client reading (drain HTTP requests, detect disconnects)
     if (client_socket >= 0 && FD_ISSET(client_socket, &rd_fds)) {
-      char junk[1024];
+      char junk[256];
       int  n = recv(client_socket, junk, sizeof(junk), 0);
       if (n <= 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
         printf("Client disconnected.\n");
@@ -289,7 +288,7 @@ int main(int argc, char **argv) {
                                  "--mjpegstream\r\n"
                                  "Content-Type: image/jpeg\r\n"
                                  "Content-Length: %zu\r\n\r\n",
-                                 bytesused[send_buf_idx]);
+                                 buffers[send_buf_idx].bytesused);
       }
 
       int disconnect = 0;
@@ -317,13 +316,13 @@ int main(int argc, char **argv) {
         } else if (sent < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
           disconnect = 1;
       } else if (send_state == 3) { // PAYLOAD
-        ssize_t to_send = (ssize_t)(bytesused[send_buf_idx] - send_offset);
+        ssize_t to_send = (ssize_t)(buffers[send_buf_idx].bytesused - send_offset);
         ssize_t sent    = send(client_socket,
                                (char *)buffers[send_buf_idx].start + send_offset,
                                (size_t)to_send, MSG_NOSIGNAL);
         if (sent > 0) {
           send_offset += (size_t)sent;
-          if (send_offset == bytesused[send_buf_idx]) {
+          if (send_offset == buffers[send_buf_idx].bytesused) {
             send_state  = 4;
             send_offset = 0;
           }
@@ -384,7 +383,6 @@ int main(int argc, char **argv) {
     munmap(buffers[i].start, buffers[i].length);
   }
   free(buffers);
-  free(bytesused);
   close(fd);
 
   printf("Exiting safely.\n");
