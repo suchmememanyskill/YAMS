@@ -12,9 +12,9 @@
 #include <unistd.h>
 
 #define PORT   8080
-#define WIDTH  1280
-#define HEIGHT 720
-#define FPS    30
+#define WIDTH  640
+#define HEIGHT 480
+#define FPS    15
 
 struct buffer {
   void  *start;

@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build-armv7:
+    name: Build (armv7l)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM cross-compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-arm-linux-gnueabihf
+
+      - name: Build
+        run: |
+          arm-linux-gnueabihf-gcc \
+            -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -O2 \
+            -march=armv7-a -mfpu=vfpv3 -mfloat-abi=hard \
+            -o yams yams.c
+
+      - name: Verify target architecture
+        run: file yams
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: yams-armv7l
+          path: yams
